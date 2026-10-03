@@ -1,7 +1,10 @@
 package iboot;
 
 public final class Consts {
-    public static final String VERSION_PREFIX = "iBoot-";
+    // The format of 'iBoot' files changed as of macOS 27 (or maybe
+    // macOS 26.4).
+    public static final String VERSION_PREFIX_IBOOT = "iBoot-";
+    public static final String VERSION_PREFIX_MBOOT = "mBoot-";
 
     public static final String[] STAGES = new String[] {
             "SecureROM",

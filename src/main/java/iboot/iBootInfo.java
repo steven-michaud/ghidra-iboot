@@ -8,32 +8,82 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 
 public class iBootInfo {
-    private static final long DESCRIPTION_OFFSET = 0x200;
+    // The format of 'iBoot' files changed as of version '6603', and again as of
+    // macOS 27 (or maybe macOS 26.4).
+    private static final long DESCRIPTION_OFFSET_IBOOT = 0x200;
+    private static final long DESCRIPTION_OFFSET_MBOOT = 0x280;
     private static final int DESCRIPTION_SIZE = 0x40;
-    private static final long EDITION_OFFSET = 0x240;
+    private static final long EDITION_OFFSET_IBOOT = 0x240;
+    private static final long EDITION_OFFSET_MBOOT = 0x2C0;
     private static final int EDITION_LENGTH = 0x40;
-    private static final long VERSION_OFFSET = 0x280;
+    private static final long VERSION_OFFSET_IBOOT = 0x280;
+    private static final long VERSION_OFFSET_MBOOT = 0x300;
     private static final long VERSION_SIZE = 0x40;
-    private static final long BASE_ADDRESS_OFFSET_OLD = 0x318;
-    private static final long BASE_ADDRESS_OFFSET_NEW = 0x300;
+    private static final long BASE_ADDRESS_OFFSET_IBOOT_OLD = 0x318;
+    private static final long BASE_ADDRESS_OFFSET_IBOOT_NEW = 0x300;
+    private static final long BASE_ADDRESS_OFFSET_MBOOT = 0x380;
     private static final int BASE_ADDRESS_SIZE = 8;
-    private static final int NEW_VERSION = 6603;
+    private static final int NEW_VERSION_IBOOT = 6603;
 
     private final String description;
+    private final String description_iBoot;
+    private final String description_mBoot;
     private final String edition;
+    private final String edition_iBoot;
+    private final String edition_mBoot;
     private final String version;
+    private final String version_iBoot;
+    private final String version_mBoot;
+    private final String version_prefix;
     private final byte[] baseAddressArea;
+    private final byte[] baseAddressArea_iBoot;
+    private final byte[] baseAddressArea_mBoot;
 
-    public iBootInfo(ByteProvider provider) throws IOException {
-        this.description = new String(provider.readBytes(DESCRIPTION_OFFSET, DESCRIPTION_SIZE),
-                StandardCharsets.US_ASCII);
-        this.edition = new String(provider.readBytes(EDITION_OFFSET, EDITION_LENGTH), StandardCharsets.US_ASCII);
-        this.version = new String(provider.readBytes(VERSION_OFFSET, VERSION_SIZE), StandardCharsets.US_ASCII);
+    public iBootInfo(ByteProvider provider) throws IOException, InvalidInputException {
+        this.description_iBoot =
+            new String(provider.readBytes(DESCRIPTION_OFFSET_IBOOT, DESCRIPTION_SIZE),
+                       StandardCharsets.US_ASCII);
+        this.description_mBoot =
+            new String(provider.readBytes(DESCRIPTION_OFFSET_MBOOT, DESCRIPTION_SIZE),
+                       StandardCharsets.US_ASCII);
+        this.edition_iBoot =
+            new String(provider.readBytes(EDITION_OFFSET_IBOOT, EDITION_LENGTH),
+                       StandardCharsets.US_ASCII);
+        this.edition_mBoot =
+            new String(provider.readBytes(EDITION_OFFSET_MBOOT, EDITION_LENGTH),
+                       StandardCharsets.US_ASCII);
+        this.version_iBoot =
+            new String(provider.readBytes(VERSION_OFFSET_IBOOT, VERSION_SIZE),
+                       StandardCharsets.US_ASCII);
+        this.version_mBoot =
+            new String(provider.readBytes(VERSION_OFFSET_MBOOT, VERSION_SIZE),
+                       StandardCharsets.US_ASCII);
 
-        long minimalBaseAddressOffset = Math.min(BASE_ADDRESS_OFFSET_NEW, BASE_ADDRESS_OFFSET_OLD);
-        long maximalBaseAddressOffset = Math.max(BASE_ADDRESS_OFFSET_NEW, BASE_ADDRESS_OFFSET_OLD);
-        this.baseAddressArea = provider.readBytes(minimalBaseAddressOffset,
-                maximalBaseAddressOffset - minimalBaseAddressOffset + BASE_ADDRESS_SIZE);
+        long minimalBaseAddressOffset =
+            Math.min(BASE_ADDRESS_OFFSET_IBOOT_NEW, BASE_ADDRESS_OFFSET_IBOOT_OLD);
+        long maximalBaseAddressOffset =
+            Math.max(BASE_ADDRESS_OFFSET_IBOOT_NEW, BASE_ADDRESS_OFFSET_IBOOT_OLD);
+        this.baseAddressArea_iBoot =
+            provider.readBytes(minimalBaseAddressOffset,
+                               maximalBaseAddressOffset - minimalBaseAddressOffset + BASE_ADDRESS_SIZE);
+        this.baseAddressArea_mBoot =
+            provider.readBytes(BASE_ADDRESS_OFFSET_MBOOT, BASE_ADDRESS_SIZE);
+
+        if (version_iBoot.startsWith(Consts.VERSION_PREFIX_IBOOT)) {
+            this.version_prefix = Consts.VERSION_PREFIX_IBOOT;
+            this.version = this.version_iBoot;
+            this.description = this.description_iBoot;
+            this.edition = this.edition_iBoot;
+            this.baseAddressArea = this.baseAddressArea_iBoot;
+        } else if (version_mBoot.startsWith(Consts.VERSION_PREFIX_MBOOT)) {
+            this.version_prefix = Consts.VERSION_PREFIX_MBOOT;
+            this.version = this.version_mBoot;
+            this.description = this.description_mBoot;
+            this.edition = this.edition_mBoot;
+            this.baseAddressArea = this.baseAddressArea_mBoot;
+        } else {
+            throw new InvalidInputException();
+        }
     }
 
     /**
@@ -75,14 +125,9 @@ public class iBootInfo {
 
     /**
      * @return the binary's iBoot version
-     * @throws InvalidInputException in case the binary is not a valid iBoot stage
      */
-    public String getVersion() throws InvalidInputException {
-        if (!version.startsWith(Consts.VERSION_PREFIX)) {
-            throw new InvalidInputException();
-        }
-
-        return this.version.substring(Consts.VERSION_PREFIX.length());
+    public String getVersion() {
+        return this.version.substring(version_prefix.length());
     }
 
     /**
@@ -102,9 +147,11 @@ public class iBootInfo {
             versionString = versionString.split("\\.")[0];
         }
 
-        if (Integer.parseInt(versionString) < NEW_VERSION) {
-            return Utils.toLittleEndianLong(this.baseAddressArea,
-                    (int)(BASE_ADDRESS_OFFSET_OLD - BASE_ADDRESS_OFFSET_NEW), BASE_ADDRESS_SIZE);
+        if (Integer.parseInt(versionString) < NEW_VERSION_IBOOT) {
+            return Utils.toLittleEndianLong(
+                this.baseAddressArea,
+                (int)(BASE_ADDRESS_OFFSET_IBOOT_OLD - BASE_ADDRESS_OFFSET_IBOOT_NEW),
+                BASE_ADDRESS_SIZE);
         } else {
             return Utils.toLittleEndianLong(this.baseAddressArea, 0, BASE_ADDRESS_SIZE);
         }

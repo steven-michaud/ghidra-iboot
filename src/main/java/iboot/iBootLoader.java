@@ -21,6 +21,18 @@ import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
+//import ghidra.framework.Application;
+
+//class Config {
+//	//public static final boolean NEWAPI =
+//	//	(Application.getApplicationVersion().compareTo("12.0.0") >= 0);
+//	static final boolean NEWAPI = true;
+//}
+
+// We don't need to override any methods where we won't be making changes --
+// where we'd just be calling super(). Since we have two, version-specific
+// load() methods, we can't use '@Override' for either of them. This API
+// changed as of Ghidra version 12.0.0.
 public class iBootLoader extends AbstractLibrarySupportLoader {
 	@Override
 	public String getName() {
@@ -43,7 +55,7 @@ public class iBootLoader extends AbstractLibrarySupportLoader {
 		return result;
 	}
 
-	@Override
+	// Prior to Ghidra 12.0.0.
 	protected void load(ByteProvider provider, LoadSpec loadSpec, List<Option> options,
 						Program program, TaskMonitor monitor, MessageLog log) {
 		FlatProgramAPI flatProgramAPI = new FlatProgramAPI(program, monitor);
@@ -62,14 +74,26 @@ public class iBootLoader extends AbstractLibrarySupportLoader {
 		}
 	}
 
-	@Override
-	public List<Option> getDefaultOptions(ByteProvider provider, LoadSpec loadSpec, DomainObject domainObject,
-										  boolean isLoadIntoProgram) {
-		return super.getDefaultOptions(provider, loadSpec, domainObject, isLoadIntoProgram);
-	}
-
-	@Override
-	public String validateOptions(ByteProvider provider, LoadSpec loadSpec, List<Option> options, Program program) {
-		return super.validateOptions(provider, loadSpec, options, program);
+	// As of Ghidra 12.0.0.
+	protected void load(Program program, ImporterSettings settings)
+			throws IOException, CancelledException {
+		MessageLog log = settings.log();
+		ByteProvider provider = settings.provider();
+		TaskMonitor monitor = settings.monitor();
+		LoadSpec loadSpec = settings.loadSpec();
+		FlatProgramAPI flatProgramAPI = new FlatProgramAPI(program, monitor);
+		Memory memory = program.getMemory();
+		monitor.setMessage("Loading iBoot stage...");
+		try {
+			Address imageBase = program.getAddressFactory().getDefaultAddressSpace().getAddress(loadSpec.getDesiredImageBase());
+			MemoryBlock imageBlock = memory.createInitializedBlock("iBoot", imageBase, provider.length(), (byte) 0, monitor, false);
+			imageBlock.setRead(true);
+			imageBlock.setExecute(true);
+			memory.setBytes(imageBase, provider.readBytes(0, provider.length()));
+			flatProgramAPI.addEntryPoint(imageBase);
+			flatProgramAPI.disassemble(imageBase);
+		} catch (Exception exception) {
+			log.appendException(exception);
+		}
 	}
 }
